@@ -64,7 +64,7 @@ class CameraDepthManager: NSObject, AVCaptureDepthDataOutputDelegate, AVCaptureV
         guard let depthDataOutput = depthDataOutput else { return }
         let depthDataQueue = DispatchQueue(label: "com.example.depthDataQueue", qos: .userInitiated)
         depthDataOutput.setDelegate(self, callbackQueue: depthDataQueue)
-        depthDataOutput.isFilteringEnabled = true // Optional: Apply temporal smoothing
+        depthDataOutput.isFilteringEnabled = false // Optional: Apply temporal smoothing
         if captureSession.canAddOutput(depthDataOutput) {
             captureSession.addOutput(depthDataOutput)
         } else {
