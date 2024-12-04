@@ -6,6 +6,11 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		A7D5E8732D00DD47003F8717 /* LZ77 in Frameworks */ = {isa = PBXBuildFile; productRef = A7D5E8722D00DD47003F8717 /* LZ77 */; };
+		A7D5E8752D00DD47003F8717 /* PNG in Frameworks */ = {isa = PBXBuildFile; productRef = A7D5E8742D00DD47003F8717 /* PNG */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXContainerItemProxy section */
 		A7D5E8412CFD664D003F8717 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -29,9 +34,22 @@
 		A7D5E84A2CFD664D003F8717 /* loggerUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = loggerUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		A7D5E8702D00B8F1003F8717 /* Exceptions for "logger" folder in "logger" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = A7D5E82D2CFD664C003F8717 /* logger */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		A7D5E8302CFD664C003F8717 /* logger */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				A7D5E8702D00B8F1003F8717 /* Exceptions for "logger" folder in "logger" target */,
+			);
 			path = logger;
 			sourceTree = "<group>";
 		};
@@ -52,6 +70,8 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A7D5E8752D00DD47003F8717 /* PNG in Frameworks */,
+				A7D5E8732D00DD47003F8717 /* LZ77 in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -112,6 +132,8 @@
 			);
 			name = logger;
 			packageProductDependencies = (
+				A7D5E8722D00DD47003F8717 /* LZ77 */,
+				A7D5E8742D00DD47003F8717 /* PNG */,
 			);
 			productName = logger;
 			productReference = A7D5E82E2CFD664C003F8717 /* logger.app */;
@@ -195,6 +217,9 @@
 			);
 			mainGroup = A7D5E8252CFD664B003F8717;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				A7D5E8712D00DD47003F8717 /* XCRemoteSwiftPackageReference "swift-png" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = A7D5E82F2CFD664C003F8717 /* Products */;
 			projectDirPath = "";
@@ -399,6 +424,7 @@
 				DEVELOPMENT_TEAM = 48A7F8SP9W;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = logger/Info.plist;
 				INFOPLIST_KEY_LSSupportsOpeningDocumentsInPlace = YES;
 				INFOPLIST_KEY_NSCameraUsageDescription = "";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
@@ -430,6 +456,7 @@
 				DEVELOPMENT_TEAM = 48A7F8SP9W;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = logger/Info.plist;
 				INFOPLIST_KEY_LSSupportsOpeningDocumentsInPlace = YES;
 				INFOPLIST_KEY_NSCameraUsageDescription = "";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
@@ -558,6 +585,30 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		A7D5E8712D00DD47003F8717 /* XCRemoteSwiftPackageReference "swift-png" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/tayloraswift/swift-png";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 4.4.8;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		A7D5E8722D00DD47003F8717 /* LZ77 */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A7D5E8712D00DD47003F8717 /* XCRemoteSwiftPackageReference "swift-png" */;
+			productName = LZ77;
+		};
+		A7D5E8742D00DD47003F8717 /* PNG */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A7D5E8712D00DD47003F8717 /* XCRemoteSwiftPackageReference "swift-png" */;
+			productName = PNG;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = A7D5E8262CFD664B003F8717 /* Project object */;
 }

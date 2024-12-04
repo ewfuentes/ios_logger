@@ -39,6 +39,16 @@ class IMULoggingManager: ObservableObject {
         }
     }
     
+    func stopIMUUpdates() {
+        if let motionManager = motionManager, motionManager.isAccelerometerAvailable {
+            motionManager.stopAccelerometerUpdates()
+        }
+        
+        if let motionManager = motionManager, motionManager.isGyroAvailable {
+            motionManager.stopGyroUpdates()
+        }
+    }
+    
     func toggleRecording() {
         isRecording.toggle()
         if isRecording {
