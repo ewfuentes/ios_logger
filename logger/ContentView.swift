@@ -9,9 +9,9 @@
 import SwiftUI
 
 struct ContentView: View {
-    @State private var logIMU = false
-    @State private var logGPS = false
-    @State private var logCameraDepth = false
+    @State private var logIMU = true
+    @State private var logGPS = true
+    @State private var logCameraDepth = true
     @State private var isRecording = false
 
     // Instantiate managers
@@ -58,8 +58,29 @@ struct ContentView: View {
             .navigationTitle("Logger App")
             .onAppear {
                 // Start GPS updates and IMU updates when view appears
-                gpsLoggingManager.startUpdatingLocation()
+                
                 imuLoggingManager.startIMUUpdates()
+            }
+            .onChange(of: logCameraDepth, initial: true) { _, newValue in
+                if newValue {
+                    cameraDepthManager.startSession()
+                } else {
+                    cameraDepthManager.stopSession()
+                }
+            }
+            .onChange(of: logGPS, initial: true) { _, newValue in
+                if newValue {
+                    gpsLoggingManager.startUpdatingLocation()
+                } else {
+//                    gpsLoggingManager.locationManager.stopUpdatingLocation()
+                }
+            }
+            .onChange(of: logIMU) {_, newValue in
+                if newValue {
+                    imuLoggingManager.startIMUUpdates()
+                } else {
+                    imuLoggingManager.stopIMUUpdates()
+                }
             }
         }
     }
@@ -76,7 +97,6 @@ struct ContentView: View {
             }
             if logCameraDepth {
                 cameraDepthManager.toggleRecording()
-                cameraDepthManager.startSession()
             }
             print("Started logging selected streams.")
         } else {
@@ -88,7 +108,6 @@ struct ContentView: View {
             }
             if logCameraDepth {
                 cameraDepthManager.toggleRecording()
-                cameraDepthManager.stopSession()
             }
             print("Stopped logging selected streams.")
         }
