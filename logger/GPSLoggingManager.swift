@@ -1,23 +1,46 @@
 import CoreLocation
 
 class GPSLoggingManager: NSObject, CLLocationManagerDelegate, ObservableObject {
-    var locationManager: CLLocationManager?
-    var isRecording = false
-    var locationLog: [(timestamp: Double, location: CLLocation?)] = []
-    var startTime: Double?
+    private let locationManager: CLLocationManager
+    @Published var isRecording = false
+    @Published var locationLog: [(timestamp: Double, location: CLLocation?)] = []
+    private var startTime: Double?
     
     override init() {
+        locationManager = CLLocationManager()
         super.init()
         
         // Set up location manager
-        locationManager = CLLocationManager()
-        locationManager?.delegate = self
-        locationManager?.desiredAccuracy = kCLLocationAccuracyBest
-        locationManager?.requestWhenInUseAuthorization()
+        locationManager.delegate = self
+        locationManager.desiredAccuracy = kCLLocationAccuracyBest
+//        locationManager.allowsBackgroundLocationUpdates = true // Add if background updates needed
+        locationManager.pausesLocationUpdatesAutomatically = false
+        locationManager.activityType = .fitness
+        locationManager.requestWhenInUseAuthorization()
     }
     
     func startUpdatingLocation() {
-        locationManager?.startUpdatingLocation()
+        // Check authorization status before starting
+        let authStatus = locationManager.authorizationStatus
+        guard authStatus == .authorizedWhenInUse || authStatus == .authorizedAlways else {
+            print("Location authorization not granted")
+            return
+        }
+        
+        locationManager.startUpdatingLocation()
+    }
+    
+    // Add authorization callback
+    func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
+        switch manager.authorizationStatus {
+        case .authorizedWhenInUse, .authorizedAlways:
+            if isRecording {
+                startUpdatingLocation()
+            }
+        default:
+            locationManager.stopUpdatingLocation()
+            print("Location authorization denied")
+        }
     }
     
     func toggleRecording() {
@@ -40,6 +63,7 @@ class GPSLoggingManager: NSObject, CLLocationManagerDelegate, ObservableObject {
     }
     
     func logLocation(location: CLLocation) {
+        print("logging location!");
         let timestamp = CFAbsoluteTimeGetCurrent() - (startTime ?? CFAbsoluteTimeGetCurrent())
         locationLog.append((timestamp: timestamp, location: location))
     }
@@ -48,10 +72,10 @@ class GPSLoggingManager: NSObject, CLLocationManagerDelegate, ObservableObject {
         let documentsDirectory = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
         let fileURL = documentsDirectory.appendingPathComponent("locationLog.csv")
         
-        var csvText = "timestamp,latitude,longitude,altitude,accuracy\n"
+        var csvText = "timestamp_s,latitude,longitude,altitude_m,horiz_accuracy_m,vert_accuracy_m,speed_mps,speed_accuracy_mps,course_deg_rel_due_north,course_acc_deg\n"
         for entry in locationLog {
             if let location = entry.location {
-                let line = "\(entry.timestamp),\(location.coordinate.latitude),\(location.coordinate.longitude),\(location.altitude),\(location.horizontalAccuracy)\n"
+                let line = "\(entry.timestamp),\(location.coordinate.latitude),\(location.coordinate.longitude),\(location.altitude),\(location.horizontalAccuracy),\(location.verticalAccuracy),\(location.speed),\(location.speedAccuracy),\(location.course),\(location.courseAccuracy)\n"
                 csvText.append(line)
             }
         }
