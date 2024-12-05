@@ -85,8 +85,6 @@ class CameraDepthManager: NSObject, AVCaptureDepthDataOutputDelegate, AVCaptureV
     var depthDataLog: [(timestamp: Double, depthData: AVDepthData?)] = []
     var startTime: Double?
     
-    private var ciDepthContext: CIContext?
-    
     private var ciContext = CIContext()
     override init() {
         super.init()
