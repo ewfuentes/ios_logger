@@ -43,8 +43,15 @@ func getPixelFormat(of image: CGImage) {
 
 func pixelBufferToPNG(_ depthBuffer: [PNG.VA<UInt16>], size: (Int, Int), path: String) throws {
     let layout = PNG.Layout.init(format: .v16(fill: nil, key: nil))
+    let startTime = DispatchTime.now()
     let image = PNG.Image(packing: depthBuffer, size: size, layout: layout)
-    try image.compress(path: path)
+    let imageCreationTime = DispatchTime.now()
+    try image.compress(path: path, level: 0)
+    let compressEndTime = DispatchTime.now()
+    
+    let imageCreationDt = Double(imageCreationTime.uptimeNanoseconds - startTime.uptimeNanoseconds) / 1_000_000_000
+    let compressDt = Double(compressEndTime.uptimeNanoseconds - imageCreationTime.uptimeNanoseconds) / 1_000_000_000
+    print("Saving times image creation \(imageCreationDt) compress time: \(compressDt)")
 }
 
 
@@ -232,8 +239,7 @@ class CameraDepthManager: NSObject, AVCaptureDepthDataOutputDelegate, AVCaptureV
             depthDataLog.removeAll()
             print("Started recording depth data")
         } else {
-            saveDepthDataLog()
-            print("Stopped recording depth data and saved to disk")
+            print("Stopped recording depth data")
         }
     }
     
@@ -243,7 +249,7 @@ class CameraDepthManager: NSObject, AVCaptureDepthDataOutputDelegate, AVCaptureV
         
         
         if isRecording {
-            logDepthData(depthData: depthData.converting(toDepthDataType: kCVPixelFormatType_DepthFloat16))
+            logDepthData(depthData: depthData.converting(toDepthDataType: kCVPixelFormatType_DepthFloat16), timestamp: timestamp)
         }
     }
     
@@ -275,18 +281,28 @@ class CameraDepthManager: NSObject, AVCaptureDepthDataOutputDelegate, AVCaptureV
         }
     }
     
-    func logDepthData(depthData: AVDepthData) {
+    func logDepthData(depthData: AVDepthData, timestamp: CMTime) {
         
         if let (depthBuffer, size) = convertPixelBufferToMillimetersBuffer(pixelBuffer: depthData.depthDataMap) {
-            let documentsURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
-            let fileURL = documentsURL.appendingPathComponent("output.png")
-            do {
-                try pixelBufferToPNG(depthBuffer, size: size, path: fileURL.path())
-                print("Image saved to: \(fileURL)")
-            } catch {
-                print("Failed to save depth data: \(error)")
+//        if let _ = convertPixelBufferToMillimetersBuffer(pixelBuffer: depthData.depthDataMap) {
+            DispatchQueue.global(qos: .userInitiated).async {
+                print("Running save depth image in background: \(timestamp)")
+                let callbackStartTime = DispatchTime.now()
+                let documentsURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+                let fileURL = documentsURL.appendingPathComponent("output.png")
+                do {
+                    let saveStartTime = DispatchTime.now()
+                    try pixelBufferToPNG(depthBuffer, size: size, path: fileURL.path())
+                    let saveEndTime = DispatchTime.now()
+                    DispatchQueue.main.async {
+                        let saveDelta = Double(saveEndTime.uptimeNanoseconds - saveStartTime.uptimeNanoseconds) / 1_000_000_000
+                        let totalDelta = Double(DispatchTime.now().uptimeNanoseconds - callbackStartTime.uptimeNanoseconds) / 1_000_000_000
+                        print("Image saved to: \(fileURL) dt: \(totalDelta) save dt: \(saveDelta)")
+                    }
+                } catch {
+                    print("Failed to save depth data: \(error)")
+                }
             }
-            
         }
         
 //        if let pngData = pixelBufferToPNG(millimeterDepthBuffer!, context: ciContext) {

@@ -72,7 +72,7 @@ struct ContentView: View {
                 if newValue {
                     gpsLoggingManager.startUpdatingLocation()
                 } else {
-                    gpsLoggingManager.locationManager?.stopUpdatingLocation()
+//                    gpsLoggingManager.locationManager.stopUpdatingLocation()
                 }
             }
             .onChange(of: logIMU) {_, newValue in
