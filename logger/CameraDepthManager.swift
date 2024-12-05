@@ -10,90 +10,78 @@ import AVFoundation
 import UIKit
 import CoreImage
 import CoreVideo
-
+import CoreGraphics
+import ImageIO
 import PNG
 
 //import VideoToolbox
 
+import CoreGraphics
+import CoreVideo
+import UniformTypeIdentifiers
 
-func getPixelFormat(of image: CGImage) {
-    // Color space
-    if let colorSpace = image.colorSpace {
-        print("Color Space: \(colorSpace)")
-    } else {
-        print("Color Space: None")
-    }
-    
-    // Bits per component
-    let bitsPerComponent = image.bitsPerComponent
-    print("Bits per Component: \(bitsPerComponent)")
-    
-    // Bits per pixel
-    let bitsPerPixel = image.bitsPerPixel
-    print("Bits per Pixel: \(bitsPerPixel)")
-    
-    // Bitmap info
-    let bitmapInfo = image.bitmapInfo
-    print("Bitmap Info: \(bitmapInfo)")
-    
-    // Alpha info
-    let alphaInfo = image.alphaInfo
-    print("Alpha Info: \(alphaInfo)")
-}
-
-func pixelBufferToPNG(_ depthBuffer: [PNG.VA<UInt16>], size: (Int, Int), path: String) throws {
-    let layout = PNG.Layout.init(format: .v16(fill: nil, key: nil))
-    let startTime = DispatchTime.now()
-    let image = PNG.Image(packing: depthBuffer, size: size, layout: layout)
-    let imageCreationTime = DispatchTime.now()
-    try image.compress(path: path, level: 0)
-    let compressEndTime = DispatchTime.now()
-    
-    let imageCreationDt = Double(imageCreationTime.uptimeNanoseconds - startTime.uptimeNanoseconds) / 1_000_000_000
-    let compressDt = Double(compressEndTime.uptimeNanoseconds - imageCreationTime.uptimeNanoseconds) / 1_000_000_000
-    print("Saving times image creation \(imageCreationDt) compress time: \(compressDt)")
-}
-
-
-
-func convertPixelBufferToMillimetersBuffer(pixelBuffer: CVPixelBuffer) -> ([PNG.VA<UInt16>], (Int, Int))? {
-    // Ensure the pixel buffer is 16-bit float format
+func saveDepth16PixelBufferAsTIFFWithoutNormalization(_ pixelBuffer: CVPixelBuffer, to url: URL) {
+    // Ensure the pixel buffer has the expected format
     guard CVPixelBufferGetPixelFormatType(pixelBuffer) == kCVPixelFormatType_DepthFloat16 else {
-        print("Unsupported pixel format")
-        return nil
+        print("Pixel buffer is not in Depth16 format.")
+        return
     }
     
+    // Lock the base address of the pixel buffer
+    CVPixelBufferLockBaseAddress(pixelBuffer, .readOnly)
+    defer { CVPixelBufferUnlockBaseAddress(pixelBuffer, .readOnly) }
+    
+    // Get the base address and dimensions of the pixel buffer
+    guard let baseAddress = CVPixelBufferGetBaseAddress(pixelBuffer) else {
+        print("Failed to get base address of the pixel buffer.")
+        return
+    }
     let width = CVPixelBufferGetWidth(pixelBuffer)
     let height = CVPixelBufferGetHeight(pixelBuffer)
+    let rowBytes = CVPixelBufferGetBytesPerRow(pixelBuffer)
     
-    // Create a new CVPixelBuffer for the output in 16-bit integer format
-    var outputBuffer = [PNG.VA<UInt16>](repeating: PNG.VA<UInt16>(0), count: width * height)
-    
-    CVPixelBufferLockBaseAddress(pixelBuffer, .readOnly)
-    
-    defer {
-        CVPixelBufferUnlockBaseAddress(pixelBuffer, .readOnly)
+    // Create a grayscale color space
+    guard let colorSpace = CGColorSpace(name: CGColorSpace.linearGray) else {
+        print("Failed to create grayscale color space.")
+        return
     }
     
-    // Access input data
-    let inputBaseAddress = CVPixelBufferGetBaseAddress(pixelBuffer)!
-    let inputBytesPerRow = CVPixelBufferGetBytesPerRow(pixelBuffer)
+    // Create a bitmap context with the 16-bit depth data
+    let bitsPerComponent = 16 // Depth16 uses 16 bits per component
+    let bytesPerRow = rowBytes
+    let bitmapInfo = (CGImageAlphaInfo.none.rawValue |
+                    CGBitmapInfo.byteOrder16Little.rawValue |
+                      CGBitmapInfo.floatInfoMask.rawValue)
     
-    for y in 0..<height {
-        let inputRow = inputBaseAddress.advanced(by: y * inputBytesPerRow).assumingMemoryBound(to: Float16.self)
-        
-        for x in 0..<width {
-            let idx = y * width + x
-            let depthInMeters = Float(inputRow[x]) // Convert Float16 to Float
-            if depthInMeters.isNaN {
-                outputBuffer[idx] = PNG.VA<UInt16>(UInt16.max)
-            } else {
-                let depthInMillimeters = UInt16((depthInMeters * 1000).rounded(.toNearestOrAwayFromZero))
-                outputBuffer[idx] = PNG.VA<UInt16>(depthInMillimeters)
-            }
-        }
+    guard let context = CGContext(data: baseAddress,
+                                   width: width,
+                                   height: height,
+                                   bitsPerComponent: bitsPerComponent,
+                                   bytesPerRow: bytesPerRow,
+                                   space: colorSpace,
+                                   bitmapInfo: bitmapInfo) else {
+        print("Failed to create bitmap context.")
+        return
     }
-    return (outputBuffer, (width, height))
+    
+    // Create a CGImage from the context
+    guard let cgImage = context.makeImage() else {
+        print("Failed to create CGImage.")
+        return
+    }
+    
+    // Save the CGImage as a TIFF file
+    guard let destination = CGImageDestinationCreateWithURL(url as CFURL, UTType.tiff.identifier as CFString, 1, nil) else {
+        print("Failed to create image destination.")
+        return
+    }
+    
+    CGImageDestinationAddImage(destination, cgImage, nil)
+    if CGImageDestinationFinalize(destination) {
+        print("TIFF file successfully saved to \(url).")
+    } else {
+        print("Failed to save the TIFF file.")
+    }
 }
 
 
@@ -106,7 +94,9 @@ class CameraDepthManager: NSObject, AVCaptureDepthDataOutputDelegate, AVCaptureV
     var isRecording = false
     var depthDataLog: [(timestamp: Double, depthData: AVDepthData?)] = []
     var startTime: Double?
-    private var ciDepthContext = CIContext()
+    
+    private var ciDepthContext: CIContext?
+    
     private var ciContext = CIContext()
     override init() {
         super.init()
@@ -143,37 +133,37 @@ class CameraDepthManager: NSObject, AVCaptureDepthDataOutputDelegate, AVCaptureV
             !format.isVideoBinned &&
             !format.supportedDepthDataFormats.isEmpty
         }) else {
-//            throw ConfigurationError.requiredFormatUnavailable
+            //            throw ConfigurationError.requiredFormatUnavailable
             print("Could not get required format")
             return
         }
-
-
+        
+        
         // Find a match that outputs depth data in the format the app's custom Metal views require.
         guard let depthFormat = (format.supportedDepthDataFormats.last { depthFormat in
             depthFormat.formatDescription.mediaSubType.rawValue == kCVPixelFormatType_DepthFloat16
         }) else {
-//            throw ConfigurationError.requiredFormatUnavailable
+            //            throw ConfigurationError.requiredFormatUnavailable
             print("Could not get required format b")
             return
         }
-
-
+        
+        
         // Begin the device configuration.
         try? videoCaptureDevice.lockForConfiguration()
-
-
+        
+        
         // Configure the device and depth formats.
         videoCaptureDevice.activeFormat = format
         videoCaptureDevice.activeDepthDataFormat = depthFormat
-
-
+        
+        
         // Finish the device configuration.
         videoCaptureDevice.unlockForConfiguration()
         
         print("Selected video format: \(videoCaptureDevice.activeFormat)")
         print("Selected depth format: \(String(describing: videoCaptureDevice.activeDepthDataFormat))")
-
+        
         
         do {
             let input = try AVCaptureDeviceInput(device: videoCaptureDevice)
@@ -245,8 +235,7 @@ class CameraDepthManager: NSObject, AVCaptureDepthDataOutputDelegate, AVCaptureV
     
     func depthDataOutput(_ output: AVCaptureDepthDataOutput, didOutput depthData: AVDepthData, timestamp: CMTime, connection: AVCaptureConnection) {
         
-//        print("Received depth data at timestamp: \(timestamp.seconds)")
-        
+        print("Received depth data at timestamp: \(timestamp.seconds)")
         
         if isRecording {
             logDepthData(depthData: depthData.converting(toDepthDataType: kCVPixelFormatType_DepthFloat16), timestamp: timestamp)
@@ -267,14 +256,14 @@ class CameraDepthManager: NSObject, AVCaptureDepthDataOutputDelegate, AVCaptureV
         
         let image = UIImage(cgImage: cgImage)
         
-//        if isRecording {
-//            if let pngData = image.pngData() {
-//                let documentsURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
-//                let fileURL = documentsURL.appendingPathComponent("color_output.png")
-//                try? pngData.write(to: fileURL)
-//                print("Color image saved to: \(fileURL)")
-//            }
-//        }
+        //        if isRecording {
+        //            if let pngData = image.pngData() {
+        //                let documentsURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+        //                let fileURL = documentsURL.appendingPathComponent("color_output.png")
+        //                try? pngData.write(to: fileURL)
+        //                print("Color image saved to: \(fileURL)")
+        //            }
+        //        }
         
         DispatchQueue.main.async {
             self.depthImageView?.image = image
@@ -282,56 +271,9 @@ class CameraDepthManager: NSObject, AVCaptureDepthDataOutputDelegate, AVCaptureV
     }
     
     func logDepthData(depthData: AVDepthData, timestamp: CMTime) {
+        let documentsURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+        let fileURL = documentsURL.appendingPathComponent("output.tiff")
+        saveDepth16PixelBufferAsTIFFWithoutNormalization(depthData.depthDataMap, to: fileURL)
         
-        if let (depthBuffer, size) = convertPixelBufferToMillimetersBuffer(pixelBuffer: depthData.depthDataMap) {
-//        if let _ = convertPixelBufferToMillimetersBuffer(pixelBuffer: depthData.depthDataMap) {
-            DispatchQueue.global(qos: .userInitiated).async {
-                print("Running save depth image in background: \(timestamp)")
-                let callbackStartTime = DispatchTime.now()
-                let documentsURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
-                let fileURL = documentsURL.appendingPathComponent("output.png")
-                do {
-                    let saveStartTime = DispatchTime.now()
-                    try pixelBufferToPNG(depthBuffer, size: size, path: fileURL.path())
-                    let saveEndTime = DispatchTime.now()
-                    DispatchQueue.main.async {
-                        let saveDelta = Double(saveEndTime.uptimeNanoseconds - saveStartTime.uptimeNanoseconds) / 1_000_000_000
-                        let totalDelta = Double(DispatchTime.now().uptimeNanoseconds - callbackStartTime.uptimeNanoseconds) / 1_000_000_000
-                        print("Image saved to: \(fileURL) dt: \(totalDelta) save dt: \(saveDelta)")
-                    }
-                } catch {
-                    print("Failed to save depth data: \(error)")
-                }
-            }
-        }
-        
-//        if let pngData = pixelBufferToPNG(millimeterDepthBuffer!, context: ciContext) {
-//            // Save or use the PNG data as needed
-//            let documentsURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
-//            let fileURL = documentsURL.appendingPathComponent("output.png")
-//            try? pngData.write(to: fileURL)
-//
-//        }
-//        let timestamp = CFAbsoluteTimeGetCurrent() - (startTime ?? CFAbsoluteTimeGetCurrent())
-        
-
-    }
-    
-    func saveDepthDataLog() {
-        let documentsDirectory = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
-        let fileURL = documentsDirectory.appendingPathComponent("depthDataLog.csv")
-        
-        var csvText = "timestamp\n"
-        for entry in depthDataLog {
-            let line = "\(entry.timestamp)\n"
-            csvText.append(line)
-        }
-        
-        do {
-            try csvText.write(to: fileURL, atomically: true, encoding: .utf8)
-            print("Depth data saved to: \(fileURL.path)")
-        } catch {
-            print("Failed to save depth data: \(error)")
-        }
     }
 }
