@@ -8,17 +8,7 @@
 
 import AVFoundation
 import UIKit
-import CoreImage
-import CoreVideo
-import CoreGraphics
-import ImageIO
-import PNG
 
-//import VideoToolbox
-
-import CoreGraphics
-import CoreVideo
-import UniformTypeIdentifiers
 
 func saveDepth16PixelBufferAsTIFFWithoutNormalization(_ pixelBuffer: CVPixelBuffer, to url: URL) {
     // Ensure the pixel buffer has the expected format
@@ -255,15 +245,6 @@ class CameraDepthManager: NSObject, AVCaptureDepthDataOutputDelegate, AVCaptureV
         }
         
         let image = UIImage(cgImage: cgImage)
-        
-        //        if isRecording {
-        //            if let pngData = image.pngData() {
-        //                let documentsURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
-        //                let fileURL = documentsURL.appendingPathComponent("color_output.png")
-        //                try? pngData.write(to: fileURL)
-        //                print("Color image saved to: \(fileURL)")
-        //            }
-        //        }
         
         DispatchQueue.main.async {
             self.depthImageView?.image = image
