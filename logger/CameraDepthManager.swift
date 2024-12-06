@@ -75,8 +75,9 @@ func saveDepth16PixelBufferAsTIFFWithoutNormalization(_ pixelBuffer: CVPixelBuff
 }
 
 
-class CameraDepthManager: NSObject, AVCaptureDepthDataOutputDelegate, AVCaptureVideoDataOutputSampleBufferDelegate, ObservableObject {
+class CameraDepthManager: NSObject, AVCaptureDataOutputSynchronizerDelegate, ObservableObject {
     var captureSession: AVCaptureSession?
+    var dataOutputSynchronizer: AVCaptureDataOutputSynchronizer?
     var videoPreviewLayer: AVCaptureVideoPreviewLayer?
     var depthDataOutput: AVCaptureDepthDataOutput?
     var videoDataOutput: AVCaptureVideoDataOutput?
@@ -169,8 +170,6 @@ class CameraDepthManager: NSObject, AVCaptureDepthDataOutputDelegate, AVCaptureV
         // Set up the depth data output
         depthDataOutput = AVCaptureDepthDataOutput()
         guard let depthDataOutput = depthDataOutput else { return }
-        let depthDataQueue = DispatchQueue(label: "com.example.depthDataQueue", qos: .userInitiated)
-        depthDataOutput.setDelegate(self, callbackQueue: depthDataQueue)
         depthDataOutput.isFilteringEnabled = false // Optional: Apply temporal smoothing
         if captureSession.canAddOutput(depthDataOutput) {
             captureSession.addOutput(depthDataOutput)
@@ -182,14 +181,17 @@ class CameraDepthManager: NSObject, AVCaptureDepthDataOutputDelegate, AVCaptureV
         // Set up the video data output
         videoDataOutput = AVCaptureVideoDataOutput()
         guard let videoDataOutput = videoDataOutput else { return }
-        let videoDataQueue = DispatchQueue(label: "com.example.videoDataQueue", qos: .userInitiated)
-        videoDataOutput.setSampleBufferDelegate(self, queue: videoDataQueue)
         if captureSession.canAddOutput(videoDataOutput) {
             captureSession.addOutput(videoDataOutput)
         } else {
             print("Could not add video data output to the capture session")
             return
         }
+
+        captureSession.commitConfiguration()
+
+        dataOutputSynchronizer = AVCaptureDataOutputSynchronizer(dataOutputs: [videoDataOutput, depthDataOutput])
+        dataOutputSynchronizer?.setDelegate(self, queue: DispatchQueue(label: "syncQueue"))
     }
     
     func startSession() {
@@ -221,29 +223,45 @@ class CameraDepthManager: NSObject, AVCaptureDepthDataOutputDelegate, AVCaptureV
         }
     }
     
-    func depthDataOutput(_ output: AVCaptureDepthDataOutput, didOutput depthData: AVDepthData, timestamp: CMTime, connection: AVCaptureConnection) {
+    func dataOutputSynchronizer(_ synchronizer: AVCaptureDataOutputSynchronizer, didOutput synchronizedDataCollection: AVCaptureSynchronizedDataCollection) {
+        guard let videoDataOutput = videoDataOutput else { return }
+        guard let depthDataOutput = depthDataOutput else { return }
         
-        print("Received depth data at timestamp: \(timestamp.seconds)")
-        
-        if isRecording {
-            logDepthData(depthData: depthData.converting(toDepthDataType: kCVPixelFormatType_DepthFloat16), timestamp: timestamp)
+        let videoData = synchronizedDataCollection.synchronizedData(for: videoDataOutput) as? AVCaptureSynchronizedSampleBufferData
+        let depthData = synchronizedDataCollection.synchronizedData(for: depthDataOutput) as? AVCaptureSynchronizedDepthData
+
+        guard let videoData = videoData else {
+            print("Could not extract rgb frame from synchronized bundle")
+            return
         }
-    }
-    
-    func captureOutput(_ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer, from connection: AVCaptureConnection) {
-        guard let imageBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else {
-            print("Failed to get image buffer from sample buffer")
+        guard let depthData = depthData else {
+            print("Could not extract depth frame from synchronized bundle")
+            return
+        }
+
+        guard !videoData.sampleBufferWasDropped, !depthData.depthDataWasDropped else {
+            print("Incomplete synchronized frame depth dropped? \(videoData.sampleBufferWasDropped) rgb dropped? \(depthData.depthDataWasDropped)")
             return
         }
         
+        print("Recieved Synchronized Frames depth - rgb dt: \(CMTimeGetSeconds(depthData.timestamp - videoData.timestamp))")
+        if isRecording {
+            logDepthData(depthData: depthData.depthData.converting(toDepthDataType: kCVPixelFormatType_DepthFloat16), timestamp: depthData.timestamp)
+        }
+
+        guard let imageBuffer = CMSampleBufferGetImageBuffer(videoData.sampleBuffer) else {
+            print("Failed to get image buffer from sample buffer")
+            return
+        }
+
         let ciImage = CIImage(cvPixelBuffer: imageBuffer)
         guard let cgImage = ciContext.createCGImage(ciImage, from: ciImage.extent) else {
             print("Failed to create CGImage from CIImage")
             return
         }
-        
+
         let image = UIImage(cgImage: cgImage)
-        
+
         DispatchQueue.main.async {
             self.depthImageView?.image = image
         }
