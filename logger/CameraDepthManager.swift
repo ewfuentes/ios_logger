@@ -74,6 +74,10 @@ func saveDepth16PixelBufferAsTIFFWithoutNormalization(_ pixelBuffer: CVPixelBuff
     }
 }
 
+func getOutputDirectory() -> URL {
+    return FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+}
+
 
 class CameraDepthManager: NSObject, AVCaptureDataOutputSynchronizerDelegate, ObservableObject {
     var captureSession: AVCaptureSession?
@@ -82,8 +86,8 @@ class CameraDepthManager: NSObject, AVCaptureDataOutputSynchronizerDelegate, Obs
     var depthDataOutput: AVCaptureDepthDataOutput?
     var videoDataOutput: AVCaptureVideoDataOutput?
     var depthImageView: UIImageView?
+    var videoCapture: VideoCapture?
     var isRecording = false
-    var depthDataLog: [(timestamp: Double, depthData: AVDepthData?)] = []
     var startTime: Double?
     
     private var ciContext = CIContext()
@@ -212,14 +216,27 @@ class CameraDepthManager: NSObject, AVCaptureDataOutputSynchronizerDelegate, Obs
         }
     }
     
-    func toggleRecording() {
+    func toggleRecording() throws {
         isRecording.toggle()
         if isRecording {
             startTime = CFAbsoluteTimeGetCurrent()
-            depthDataLog.removeAll()
+            
+            videoCapture = VideoCapture()
+            let outputDirectory = getOutputDirectory()
+            let videoFile = outputDirectory.appendingPathComponent("output.mov")
+            
+            let width = videoDataOutput?.videoSettings["Width"] as! Double
+            let height = videoDataOutput?.videoSettings["Height"] as! Double
+            let size = CGSize(width: width, height: height)
+            try videoCapture?.setupWriter(outputFileURL: videoFile, frameSize: size)
+            videoCapture?.startWriting()
             print("Started recording depth data")
         } else {
             print("Stopped recording depth data")
+            videoCapture?.finishWriting { outputURL in
+                print("Video saved to \(outputURL?.absoluteString ?? "Unknown location")")
+            }
+            videoCapture = nil
         }
     }
     
@@ -247,6 +264,7 @@ class CameraDepthManager: NSObject, AVCaptureDataOutputSynchronizerDelegate, Obs
         print("Recieved Synchronized Frames depth - rgb dt: \(CMTimeGetSeconds(depthData.timestamp - videoData.timestamp))")
         if isRecording {
             logDepthData(depthData: depthData.depthData.converting(toDepthDataType: kCVPixelFormatType_DepthFloat16), timestamp: depthData.timestamp)
+            videoCapture?.addFrame(pixelBuffer: videoData.sampleBuffer.imageBuffer!, at: videoData.timestamp)
         }
 
         guard let imageBuffer = CMSampleBufferGetImageBuffer(videoData.sampleBuffer) else {
@@ -268,9 +286,88 @@ class CameraDepthManager: NSObject, AVCaptureDataOutputSynchronizerDelegate, Obs
     }
     
     func logDepthData(depthData: AVDepthData, timestamp: CMTime) {
-        let documentsURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
-        let fileURL = documentsURL.appendingPathComponent("output.tiff")
+        let outputDirectory = getOutputDirectory()
+        let fileURL = outputDirectory.appendingPathComponent("output.tiff")
         saveDepth16PixelBufferAsTIFFWithoutNormalization(depthData.depthDataMap, to: fileURL)
         
+    }
+}
+
+
+class VideoCapture: NSObject {
+    private var assetWriter: AVAssetWriter?
+    private var videoInput: AVAssetWriterInput?
+    private var pixelBufferAdaptor: AVAssetWriterInputPixelBufferAdaptor?
+    private var frameNumber: Int = 0
+    private var outputURL: URL?
+    private var startTime: CMTime?
+
+    func setupWriter(outputFileURL: URL, frameSize: CGSize) throws {
+        // Save the output URL for later
+        self.outputURL = outputFileURL
+
+        // Initialize the asset writer
+        assetWriter = try AVAssetWriter(outputURL: outputFileURL, fileType: .mov)
+
+        // Configure video settings
+        let videoSettings: [String: Any] = [
+            AVVideoCodecKey: AVVideoCodecType.h264,
+            AVVideoWidthKey: frameSize.width,
+            AVVideoHeightKey: frameSize.height
+        ]
+
+        // Create video input
+        videoInput = AVAssetWriterInput(mediaType: .video, outputSettings: videoSettings)
+        videoInput?.expectsMediaDataInRealTime = true
+
+        // Create a pixel buffer adaptor
+        let sourcePixelBufferAttributes: [String: Any] = [
+            kCVPixelBufferPixelFormatTypeKey as String: Int(kCVPixelFormatType_32BGRA),
+            kCVPixelBufferWidthKey as String: frameSize.width,
+            kCVPixelBufferHeightKey as String: frameSize.height
+        ]
+        pixelBufferAdaptor = AVAssetWriterInputPixelBufferAdaptor(
+            assetWriterInput: videoInput!,
+            sourcePixelBufferAttributes: sourcePixelBufferAttributes
+        )
+
+        // Add video input to the asset writer
+        if let videoInput = videoInput, assetWriter?.canAdd(videoInput) == true {
+            assetWriter?.add(videoInput)
+        } else {
+            throw NSError(domain: "VideoCapture", code: -1, userInfo: [NSLocalizedDescriptionKey: "Cannot add video input"])
+        }
+    }
+    
+    func startWriting() {
+        guard let assetWriter = assetWriter else { return }
+
+        // Start writing session
+        assetWriter.startWriting()
+        assetWriter.startSession(atSourceTime: .zero)
+        frameNumber = 0
+    }
+    
+    func addFrame(pixelBuffer: CVPixelBuffer, at time: CMTime) {
+        if startTime == nil {
+            startTime = time
+        }
+        guard let videoInput = videoInput,
+              let pixelBufferAdaptor = pixelBufferAdaptor,
+              videoInput.isReadyForMoreMediaData else { return }
+
+        pixelBufferAdaptor.append(pixelBuffer, withPresentationTime: time - startTime!)
+        frameNumber += 1
+    }
+    
+    func finishWriting(completion: @escaping (URL?) -> Void) {
+        videoInput?.markAsFinished()
+        assetWriter?.finishWriting { [weak self] in
+            if let outputURL = self?.outputURL {
+                completion(outputURL)
+            } else {
+                completion(nil)
+            }
+        }
     }
 }

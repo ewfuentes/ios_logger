@@ -33,7 +33,7 @@ struct ContentView: View {
 
                 // Button to start or stop logging based on user selection
                 Button(action: {
-                    toggleRecording()
+                    try? toggleRecording()
                 }) {
                     Text(isRecording ? "Stop Recording" : "Start Recording")
                         .font(.headline)
@@ -85,7 +85,7 @@ struct ContentView: View {
         }
     }
 
-    func toggleRecording() {
+    func toggleRecording() throws {
         isRecording.toggle()
 
         if isRecording {
@@ -96,7 +96,7 @@ struct ContentView: View {
                 gpsLoggingManager.toggleRecording()
             }
             if logCameraDepth {
-                cameraDepthManager.toggleRecording()
+                try cameraDepthManager.toggleRecording()
             }
             print("Started logging selected streams.")
         } else {
@@ -107,7 +107,7 @@ struct ContentView: View {
                 gpsLoggingManager.toggleRecording()
             }
             if logCameraDepth {
-                cameraDepthManager.toggleRecording()
+                try cameraDepthManager.toggleRecording()
             }
             print("Stopped logging selected streams.")
         }
