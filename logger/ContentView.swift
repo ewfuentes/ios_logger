@@ -18,6 +18,7 @@ struct ContentView: View {
     @StateObject var imuLoggingManager = IMULoggingManager()
     @StateObject var gpsLoggingManager = GPSLoggingManager()
     @StateObject var cameraDepthManager = CameraDepthManager()
+    @StateObject var logManager = LogManager()
 
     var body: some View {
         NavigationView {
@@ -89,6 +90,8 @@ struct ContentView: View {
         isRecording.toggle()
 
         if isRecording {
+            logManager.startLog()
+            
             if logIMU {
                 imuLoggingManager.toggleRecording()
             }
@@ -96,7 +99,7 @@ struct ContentView: View {
                 gpsLoggingManager.toggleRecording()
             }
             if logCameraDepth {
-                try cameraDepthManager.toggleRecording()
+                try cameraDepthManager.setRecordingStatus(logPath: logManager.getCurrentLogDirectory())
             }
             print("Started logging selected streams.")
         } else {
@@ -107,8 +110,9 @@ struct ContentView: View {
                 gpsLoggingManager.toggleRecording()
             }
             if logCameraDepth {
-                try cameraDepthManager.toggleRecording()
+                try cameraDepthManager.setRecordingStatus(logPath: nil)
             }
+            logManager.endLog()
             print("Stopped logging selected streams.")
         }
     }
