@@ -12,7 +12,7 @@ import UIKit
 
 func saveDepth16PixelBufferAsTIFFWithoutNormalization(_ pixelBuffer: CVPixelBuffer, to url: URL) {
     // Ensure the pixel buffer has the expected format
-    guard CVPixelBufferGetPixelFormatType(pixelBuffer) == kCVPixelFormatType_DepthFloat16 else {
+    guard CVPixelBufferGetPixelFormatType(pixelBuffer) == kCVPixelFormatType_DepthFloat32 else {
         print("Pixel buffer is not in Depth16 format.")
         return
     }
@@ -37,10 +37,10 @@ func saveDepth16PixelBufferAsTIFFWithoutNormalization(_ pixelBuffer: CVPixelBuff
     }
     
     // Create a bitmap context with the 16-bit depth data
-    let bitsPerComponent = 16 // Depth16 uses 16 bits per component
+    let bitsPerComponent = 32 // Depth16 uses 16 bits per component
     let bytesPerRow = rowBytes
     let bitmapInfo = (CGImageAlphaInfo.none.rawValue |
-                    CGBitmapInfo.byteOrder16Little.rawValue |
+                    CGBitmapInfo.byteOrder32Little.rawValue |
                       CGBitmapInfo.floatInfoMask.rawValue)
     
     guard let context = CGContext(data: baseAddress,
@@ -281,7 +281,7 @@ class CameraDepthManager: NSObject, AVCaptureDataOutputSynchronizerDelegate, Obs
         if isRecording() {
             // Note that the frame number from the video capture should be grabbed before a frame is added
             let frameNumber: Int = videoCapture!.frameNumber
-            logDepthData(depthData: depthData.depthData.converting(toDepthDataType: kCVPixelFormatType_DepthFloat16),
+            logDepthData(depthData: depthData.depthData.converting(toDepthDataType: kCVPixelFormatType_DepthFloat32),
                          frameNumber: frameNumber)
             
             logManager?.handleFrames(frameNumber: frameNumber, video: videoData, depth: depthData)
@@ -313,7 +313,7 @@ class CameraDepthManager: NSObject, AVCaptureDataOutputSynchronizerDelegate, Obs
                 try FileManager.default.createDirectory(at: folderPath!, withIntermediateDirectories: true)
             }
             
-            let fileURL = folderPath!.appendingPathComponent("\(frameNumber).tiff")
+            let fileURL = folderPath!.appendingPathComponent("\(String(format: "%08d", frameNumber)).tiff")
             saveDepth16PixelBufferAsTIFFWithoutNormalization(depthData.depthDataMap, to: fileURL)
         } catch {
             print("Error saving depth data: \(error)")

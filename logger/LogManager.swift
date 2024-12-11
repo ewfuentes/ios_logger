@@ -49,11 +49,22 @@ struct GPSMeasurement: Codable {
     let heading_accuracy_deg: Double
 }
 
+enum ColorFormat: String, Codable {
+    case rgb
+    case gray
+}
+
 struct FrameInfo: Codable {
     let cameraInd: Int
     let time_s: Double
-    let cameraParameters: CameraParameters
+    let colorFormat: ColorFormat
+    let depthScale: Double?
+    let exposureTimeSeconds: Double?
+    let calibration: CameraParameters
+    
 }
+
+
 
 struct CameraParameters: Codable {
     let focalLengthX: Float
@@ -180,6 +191,7 @@ class LogManager: ObservableObject {
         depth: AVCaptureSynchronizedDepthData
     ) {
         let calib = depth.depthData.cameraCalibrationData
+        print("Intrinsics: \(calib!.intrinsicMatrix)")
         let record = Record(
             time: video.timestamp.seconds,
             number: frameNumber,
@@ -187,19 +199,25 @@ class LogManager: ObservableObject {
                 // RGB Frame Info
                 FrameInfo(cameraInd: 0,
                           time_s: video.timestamp.seconds,
-                          cameraParameters: CameraParameters(
+                          colorFormat: .rgb,
+                          depthScale: nil,
+                          exposureTimeSeconds: 1 / 30.0,
+                          calibration: CameraParameters(
                             focalLengthX: calib!.intrinsicMatrix[0, 0],
                             focalLengthY: calib!.intrinsicMatrix[1, 1],
-                            principalPointX: calib!.intrinsicMatrix[0, 2],
-                            principalPointY: calib!.intrinsicMatrix[1, 2])),
+                            principalPointX: calib!.intrinsicMatrix[2, 0],
+                            principalPointY: calib!.intrinsicMatrix[2, 1])),
                 // Depth Frame info
                 FrameInfo(cameraInd: 1,
                           time_s: depth.timestamp.seconds,
-                          cameraParameters: CameraParameters(
+                          colorFormat: .gray,
+                          depthScale: 1.0,
+                          exposureTimeSeconds: nil,
+                          calibration: CameraParameters(
                             focalLengthX: calib!.intrinsicMatrix[0, 0] / 6.0,
                             focalLengthY: calib!.intrinsicMatrix[1, 1] / 6.0,
-                            principalPointX: calib!.intrinsicMatrix[0, 2] / 6.0,
-                            principalPointY: calib!.intrinsicMatrix[1, 2] / 6.0))
+                            principalPointX: calib!.intrinsicMatrix[2, 0] / 6.0,
+                            principalPointY: calib!.intrinsicMatrix[2, 1] / 6.0))
             ]
         )
         
@@ -222,7 +240,7 @@ class LogManager: ObservableObject {
     private func getLogDirectory() -> URL {
         let documentsDirectory = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
         let dateFormatter = DateFormatter()
-        dateFormatter.dateFormat = "yyyyMMDD_HHmmss"
+        dateFormatter.dateFormat = "yyyyMMdd_HHmmss"
         let folderName = dateFormatter.string(from: Date())
         let fileURL = documentsDirectory.appendingPathComponent(folderName)
         return fileURL
