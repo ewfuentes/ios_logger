@@ -240,7 +240,7 @@ class CameraDepthManager: NSObject, AVCaptureDataOutputSynchronizerDelegate, Obs
                 self.startTime = CFAbsoluteTimeGetCurrent()
                 
                 self.videoCapture = VideoCapture()
-                let videoFile = self.logPath?.appendingPathComponent("output.mov")
+                let videoFile = self.logPath?.appendingPathComponent("data.mov")
                 
                 let width = self.videoDataOutput?.videoSettings["Width"] as! Double
                 let height = self.videoDataOutput?.videoSettings["Height"] as! Double
@@ -335,7 +335,7 @@ class VideoCapture: NSObject {
         self.outputURL = outputFileURL
 
         // Initialize the asset writer
-        assetWriter = try AVAssetWriter(outputURL: outputFileURL, fileType: .mov)
+        assetWriter = try AVAssetWriter(outputURL: outputFileURL, fileType: .mp4)
 
         // Configure video settings
         let videoSettings: [String: Any] = [

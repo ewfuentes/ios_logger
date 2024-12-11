@@ -10,18 +10,18 @@ import CoreMotion
 import AVFoundation
 
 struct Record: Codable {
-    let time_s: Double
+    let time: Double
     let number: Int?
     let sensor: IMUMeasurement?
     let gps: GPSMeasurement?
-    let frames: FrameInfo?
+    let frames: [FrameInfo]?
     
-    init (time_s: Double,
+    init (time: Double,
           sensor: IMUMeasurement? = nil,
           gps: GPSMeasurement? = nil,
           number: Int? = nil,
-          frames: FrameInfo? = nil) {
-        self.time_s = time_s
+          frames: [FrameInfo]? = nil) {
+        self.time = time
         self.sensor = sensor
         self.gps = gps
         self.number = number
@@ -50,6 +50,18 @@ struct GPSMeasurement: Codable {
 }
 
 struct FrameInfo: Codable {
+    let cameraInd: Int
+    let time_s: Double
+    let cameraParameters: CameraParameters
+}
+
+struct CameraParameters: Codable {
+    let focalLengthX: Float
+    let focalLengthY: Float
+    let principalPointX: Float
+    let principalPointY: Float
+//    let distortionModel: Double
+//    let distortionCoefficients: [Double]
     
 }
 
@@ -100,7 +112,7 @@ class LogManager: ObservableObject {
         let encoder = JSONEncoder()
         encoder.outputFormatting = .sortedKeys
         do {
-            print("Encoding record: \(record)")
+//            print("Encoding record: \(record)")
             let jsonLine = try encoder.encode(record)
             try self.jsonData?.write(contentsOf: jsonLine)
             try self.jsonData?.write(contentsOf: "\r\n".data(using: .utf8)!)
@@ -112,7 +124,7 @@ class LogManager: ObservableObject {
     func handleAccelMeasurement(meas: CMAccelerometerData) {
         dispatchQueue.async {
             let record = Record(
-                time_s: meas.timestamp,
+                time: meas.timestamp,
                 sensor: IMUMeasurement(
                     type: .accelerometer,
                     values: [
@@ -127,7 +139,7 @@ class LogManager: ObservableObject {
     func handleGyroMeasurement(meas: CMGyroData) {
         dispatchQueue.async {
             let record = Record(
-                time_s: meas.timestamp,
+                time: meas.timestamp,
                 sensor: IMUMeasurement(
                     type: .gyroscope,
                     values: [
@@ -146,7 +158,7 @@ class LogManager: ObservableObject {
             for m in meas {
                 let time_since_boot_s: TimeInterval = m.timestamp.timeIntervalSince(bootTime)
                 let record = Record(
-                    time_s: time_since_boot_s,
+                    time: time_since_boot_s,
                     gps: GPSMeasurement(
                         latitude: m.coordinate.latitude,
                         longitude: m.coordinate.longitude,
@@ -167,11 +179,30 @@ class LogManager: ObservableObject {
         video: AVCaptureSynchronizedSampleBufferData,
         depth: AVCaptureSynchronizedDepthData
     ) {
+        let calib = depth.depthData.cameraCalibrationData
         let record = Record(
-            time_s: video.timestamp.seconds,
+            time: video.timestamp.seconds,
             number: frameNumber,
-            frames: FrameInfo()
+            frames: [
+                // RGB Frame Info
+                FrameInfo(cameraInd: 0,
+                          time_s: video.timestamp.seconds,
+                          cameraParameters: CameraParameters(
+                            focalLengthX: calib!.intrinsicMatrix[0, 0],
+                            focalLengthY: calib!.intrinsicMatrix[1, 1],
+                            principalPointX: calib!.intrinsicMatrix[0, 2],
+                            principalPointY: calib!.intrinsicMatrix[1, 2])),
+                // Depth Frame info
+                FrameInfo(cameraInd: 1,
+                          time_s: depth.timestamp.seconds,
+                          cameraParameters: CameraParameters(
+                            focalLengthX: calib!.intrinsicMatrix[0, 0] / 6.0,
+                            focalLengthY: calib!.intrinsicMatrix[1, 1] / 6.0,
+                            principalPointX: calib!.intrinsicMatrix[0, 2] / 6.0,
+                            principalPointY: calib!.intrinsicMatrix[1, 2] / 6.0))
+            ]
         )
+        
         dispatchQueue.async {
             self.writeRecordToLog(record)
         }
