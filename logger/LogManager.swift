@@ -6,15 +6,78 @@
 //
 
 import Foundation
+import CoreMotion
+import AVFoundation
+
+struct Record: Codable {
+    let time_s: Double
+    let number: Int?
+    let sensor: IMUMeasurement?
+    let gps: GPSMeasurement?
+    let frames: FrameInfo?
+    
+    init (time_s: Double,
+          sensor: IMUMeasurement? = nil,
+          gps: GPSMeasurement? = nil,
+          number: Int? = nil,
+          frames: FrameInfo? = nil) {
+        self.time_s = time_s
+        self.sensor = sensor
+        self.gps = gps
+        self.number = number
+        self.frames = frames
+    }
+}
+
+enum IMUSensorType: String, Codable {
+    case accelerometer
+    case gyroscope
+}
+
+struct IMUMeasurement: Codable {
+    let type: IMUSensorType
+    let values: [Double]
+}
+
+struct GPSMeasurement: Codable {
+    let latitude: Double
+    let longitude: Double
+    let heading_deg: Double
+    let altitude_m: Double
+    let accuracy: Double
+    let vertical_accuracy_m: Double
+    let heading_accuracy_deg: Double
+}
+
+struct FrameInfo: Codable {
+    
+}
+
 
 class LogManager: ObservableObject {
     private var logDir: URL?
+    private var jsonData: FileHandle?
+    private var dispatchQueue = DispatchQueue(label: "log_manager_queue", qos: .userInitiated)
     
+    deinit {
+        if jsonData != nil {
+            do {
+                try jsonData?.close()
+            } catch {
+                print("Failed to close json file \(error)")
+            }
+        }
+    }
     
     func startLog() {
         logDir = getLogDirectory()
         do {
-            try FileManager.default.createDirectory(at: logDir!, withIntermediateDirectories: true)
+            let fm = FileManager.default
+            try fm.createDirectory(at: logDir!, withIntermediateDirectories: true)
+            let jsonDataPath = logDir?.appendingPathComponent("data.jsonl")
+            fm.createFile(atPath: jsonDataPath!.relativePath, contents: nil)
+            
+            jsonData = try FileHandle(forWritingTo: jsonDataPath!)
         } catch {
             print("Error creating log directory: \(error)")
         }
@@ -23,18 +86,95 @@ class LogManager: ObservableObject {
     
     func endLog() {
         print("Closing log in \(logDir!)")
+        do {
+            try jsonData?.synchronize()
+            try jsonData?.close()
+        } catch {
+            print("Failed to close json file \(error)")
+        }
+        jsonData = nil
         logDir = nil
     }
     
-    func handleAccelMeasurement() {
-        
+    private func writeRecordToLog(_ record: Record) {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = .sortedKeys
+        do {
+            print("Encoding record: \(record)")
+            let jsonLine = try encoder.encode(record)
+            try self.jsonData?.write(contentsOf: jsonLine)
+            try self.jsonData?.write(contentsOf: "\r\n".data(using: .utf8)!)
+        } catch {
+            print("Failed to encode Record \(error) \(record)")
+        }
     }
     
-    func handleGyroMeasurement() {
-        
+    func handleAccelMeasurement(meas: CMAccelerometerData) {
+        dispatchQueue.async {
+            let record = Record(
+                time_s: meas.timestamp,
+                sensor: IMUMeasurement(
+                    type: .accelerometer,
+                    values: [
+                        meas.acceleration.x,
+                        meas.acceleration.y,
+                        meas.acceleration.z])
+            )
+            self.writeRecordToLog(record)
+        }
     }
     
-    func handleGPSMeasurement() {
+    func handleGyroMeasurement(meas: CMGyroData) {
+        dispatchQueue.async {
+            let record = Record(
+                time_s: meas.timestamp,
+                sensor: IMUMeasurement(
+                    type: .gyroscope,
+                    values: [
+                        meas.rotationRate.x,
+                        meas.rotationRate.y,
+                        meas.rotationRate.z])
+            )
+            
+            self.writeRecordToLog(record)
+        }
+    }
+    
+    func handleGPSMeasurement(meas: [CLLocation]) {
+        dispatchQueue.async {
+            let bootTime: Date = Date().addingTimeInterval(-ProcessInfo.processInfo.systemUptime)
+            for m in meas {
+                let time_since_boot_s: TimeInterval = m.timestamp.timeIntervalSince(bootTime)
+                let record = Record(
+                    time_s: time_since_boot_s,
+                    gps: GPSMeasurement(
+                        latitude: m.coordinate.latitude,
+                        longitude: m.coordinate.longitude,
+                        heading_deg: m.course,
+                        altitude_m: m.altitude,
+                        accuracy: m.horizontalAccuracy,
+                        vertical_accuracy_m: m.verticalAccuracy,
+                        heading_accuracy_deg: m.courseAccuracy
+                    )
+                )
+                self.writeRecordToLog(record)
+            }
+        }
+    }
+    
+    func handleFrames(
+        frameNumber: Int,
+        video: AVCaptureSynchronizedSampleBufferData,
+        depth: AVCaptureSynchronizedDepthData
+    ) {
+        let record = Record(
+            time_s: video.timestamp.seconds,
+            number: frameNumber,
+            frames: FrameInfo()
+        )
+        dispatchQueue.async {
+            self.writeRecordToLog(record)
+        }
         
     }
     
