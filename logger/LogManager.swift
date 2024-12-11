@@ -191,7 +191,6 @@ class LogManager: ObservableObject {
         depth: AVCaptureSynchronizedDepthData
     ) {
         let calib = depth.depthData.cameraCalibrationData
-        print("Intrinsics: \(calib!.intrinsicMatrix)")
         let record = Record(
             time: video.timestamp.seconds,
             number: frameNumber,
