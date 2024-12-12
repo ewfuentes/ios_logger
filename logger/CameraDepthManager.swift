@@ -12,8 +12,8 @@ import UIKit
 
 func saveDepth16PixelBufferAsTIFFWithoutNormalization(_ pixelBuffer: CVPixelBuffer, to url: URL) {
     // Ensure the pixel buffer has the expected format
-    guard CVPixelBufferGetPixelFormatType(pixelBuffer) == kCVPixelFormatType_DepthFloat16 else {
-        print("Pixel buffer is not in Depth16 format.")
+    guard CVPixelBufferGetPixelFormatType(pixelBuffer) == kCVPixelFormatType_DepthFloat32 else {
+        print("Pixel buffer is not in Depth32 format.")
         return
     }
     
@@ -36,11 +36,11 @@ func saveDepth16PixelBufferAsTIFFWithoutNormalization(_ pixelBuffer: CVPixelBuff
         return
     }
     
-    // Create a bitmap context with the 16-bit depth data
-    let bitsPerComponent = 16 // Depth16 uses 16 bits per component
+    // Create a bitmap context with the 32-bit depth data
+    let bitsPerComponent = 32 // Depth32 uses 32 bits per component
     let bytesPerRow = rowBytes
     let bitmapInfo = (CGImageAlphaInfo.none.rawValue |
-                    CGBitmapInfo.byteOrder16Little.rawValue |
+                    CGBitmapInfo.byteOrder32Little.rawValue |
                       CGBitmapInfo.floatInfoMask.rawValue)
     
     guard let context = CGContext(data: baseAddress,
@@ -68,7 +68,7 @@ func saveDepth16PixelBufferAsTIFFWithoutNormalization(_ pixelBuffer: CVPixelBuff
     
     CGImageDestinationAddImage(destination, cgImage, nil)
     if CGImageDestinationFinalize(destination) {
-        print("TIFF file successfully saved to \(url).")
+//        print("TIFF file successfully saved to \(url).")
     } else {
         print("Failed to save the TIFF file.")
     }
@@ -87,13 +87,19 @@ class CameraDepthManager: NSObject, AVCaptureDataOutputSynchronizerDelegate, Obs
     var videoDataOutput: AVCaptureVideoDataOutput?
     var depthImageView: UIImageView?
     var videoCapture: VideoCapture?
-    var isRecording = false
+    var logPath: URL?
+    var logManager: LogManager?
     var startTime: Double?
+    var synchronizerDispatchQueue = DispatchQueue(label: "syncQueue")
     
     private var ciContext = CIContext()
     override init() {
         super.init()
         setupCaptureSession()
+    }
+    
+    private func isRecording() -> Bool {
+        return logPath != nil
     }
     
     func createPreviewView() -> UIView {
@@ -195,7 +201,7 @@ class CameraDepthManager: NSObject, AVCaptureDataOutputSynchronizerDelegate, Obs
         captureSession.commitConfiguration()
 
         dataOutputSynchronizer = AVCaptureDataOutputSynchronizer(dataOutputs: [videoDataOutput, depthDataOutput])
-        dataOutputSynchronizer?.setDelegate(self, queue: DispatchQueue(label: "syncQueue"))
+        dataOutputSynchronizer?.setDelegate(self, queue: synchronizerDispatchQueue)
     }
     
     func startSession() {
@@ -216,27 +222,37 @@ class CameraDepthManager: NSObject, AVCaptureDataOutputSynchronizerDelegate, Obs
         }
     }
     
-    func toggleRecording() throws {
-        isRecording.toggle()
-        if isRecording {
-            startTime = CFAbsoluteTimeGetCurrent()
-            
-            videoCapture = VideoCapture()
-            let outputDirectory = getOutputDirectory()
-            let videoFile = outputDirectory.appendingPathComponent("output.mov")
-            
-            let width = videoDataOutput?.videoSettings["Width"] as! Double
-            let height = videoDataOutput?.videoSettings["Height"] as! Double
-            let size = CGSize(width: width, height: height)
-            try videoCapture?.setupWriter(outputFileURL: videoFile, frameSize: size)
-            videoCapture?.startWriting()
-            print("Started recording depth data")
-        } else {
-            print("Stopped recording depth data")
-            videoCapture?.finishWriting { outputURL in
-                print("Video saved to \(outputURL?.absoluteString ?? "Unknown location")")
+    func setRecordingStatus(logPath: URL?) {
+        synchronizerDispatchQueue.async {
+            if self.logPath != nil {
+                // Stop an existing log one currently exists
+                print("Stopped recording depth data")
+                self.videoCapture?.finishWriting { outputURL in
+                    print("Video saved to \(outputURL?.absoluteString ?? "Unknown location")")
+                }
+                self.videoCapture = nil
             }
-            videoCapture = nil
+            
+            self.logPath = logPath
+            
+            if self.logPath != nil {
+                // Start a new log if required
+                self.startTime = CFAbsoluteTimeGetCurrent()
+                
+                self.videoCapture = VideoCapture()
+                let videoFile = self.logPath?.appendingPathComponent("data.mov")
+                
+                let width = self.videoDataOutput?.videoSettings["Width"] as! Double
+                let height = self.videoDataOutput?.videoSettings["Height"] as! Double
+                let size = CGSize(width: width, height: height)
+                do {
+                    try self.videoCapture?.setupWriter(outputFileURL: videoFile!, frameSize: size)
+                } catch {
+                    print("Unable to create output video file: \(videoFile!)")
+                }
+                self.videoCapture?.startWriting()
+                print("Started recording depth data")
+            }
         }
     }
     
@@ -261,9 +277,14 @@ class CameraDepthManager: NSObject, AVCaptureDataOutputSynchronizerDelegate, Obs
             return
         }
         
-        print("Recieved Synchronized Frames depth - rgb dt: \(CMTimeGetSeconds(depthData.timestamp - videoData.timestamp))")
-        if isRecording {
-            logDepthData(depthData: depthData.depthData.converting(toDepthDataType: kCVPixelFormatType_DepthFloat16), timestamp: depthData.timestamp)
+        // print("Recieved Synchronized Frames depth - rgb dt: \(CMTimeGetSeconds(depthData.timestamp - videoData.timestamp))")
+        if isRecording() {
+            // Note that the frame number from the video capture should be grabbed before a frame is added
+            let frameNumber: Int = videoCapture!.frameNumber
+            logDepthData(depthData: depthData.depthData.converting(toDepthDataType: kCVPixelFormatType_DepthFloat32),
+                         frameNumber: frameNumber)
+            
+            logManager?.handleFrames(frameNumber: frameNumber, video: videoData, depth: depthData)
             videoCapture?.addFrame(pixelBuffer: videoData.sampleBuffer.imageBuffer!, at: videoData.timestamp)
         }
 
@@ -285,11 +306,18 @@ class CameraDepthManager: NSObject, AVCaptureDataOutputSynchronizerDelegate, Obs
         }
     }
     
-    func logDepthData(depthData: AVDepthData, timestamp: CMTime) {
-        let outputDirectory = getOutputDirectory()
-        let fileURL = outputDirectory.appendingPathComponent("output.tiff")
-        saveDepth16PixelBufferAsTIFFWithoutNormalization(depthData.depthDataMap, to: fileURL)
-        
+    func logDepthData(depthData: AVDepthData, frameNumber: Int) {
+        do {
+            let folderPath = logPath?.appendingPathComponent("frames2")
+            if !FileManager.default.fileExists(atPath: folderPath!.absoluteString) {
+                try FileManager.default.createDirectory(at: folderPath!, withIntermediateDirectories: true)
+            }
+            
+            let fileURL = folderPath!.appendingPathComponent("\(String(format: "%08d", frameNumber)).tiff")
+            saveDepth16PixelBufferAsTIFFWithoutNormalization(depthData.depthDataMap, to: fileURL)
+        } catch {
+            print("Error saving depth data: \(error)")
+        }
     }
 }
 
@@ -298,7 +326,7 @@ class VideoCapture: NSObject {
     private var assetWriter: AVAssetWriter?
     private var videoInput: AVAssetWriterInput?
     private var pixelBufferAdaptor: AVAssetWriterInputPixelBufferAdaptor?
-    private var frameNumber: Int = 0
+    var frameNumber: Int = 0
     private var outputURL: URL?
     private var startTime: CMTime?
 
