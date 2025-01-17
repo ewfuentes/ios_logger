@@ -139,9 +139,9 @@ class LogManager: ObservableObject {
                 sensor: IMUMeasurement(
                     type: .accelerometer,
                     values: [
-                        meas.acceleration.x,
-                        meas.acceleration.y,
-                        meas.acceleration.z])
+                        meas.acceleration.x * 9.8, // convert to mpss
+                        meas.acceleration.y * 9.8,
+                        meas.acceleration.z * 9.8])
             )
             self.writeRecordToLog(record)
         }
