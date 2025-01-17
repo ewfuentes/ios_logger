@@ -76,6 +76,16 @@ struct CameraParameters: Codable {
     
 }
 
+struct Calibration: Codable {
+    let deviceID: String
+}
+
+func modelIdentifier() -> String {
+    if let simulatorModelIdentifier = ProcessInfo().environment["SIMULATOR_MODEL_IDENTIFIER"] { return simulatorModelIdentifier }
+    var sysinfo = utsname()
+    uname(&sysinfo) // ignore return value
+    return String(bytes: Data(bytes: &sysinfo.machine, count: Int(_SYS_NAMELEN)), encoding: .ascii)!.trimmingCharacters(in: .controlCharacters)
+}
 
 class LogManager: ObservableObject {
     private var logDir: URL?
@@ -98,7 +108,13 @@ class LogManager: ObservableObject {
             let fm = FileManager.default
             try fm.createDirectory(at: logDir!, withIntermediateDirectories: true)
             let jsonDataPath = logDir?.appendingPathComponent("data.jsonl")
+            let calibJsonDataPath = logDir?.appendingPathComponent("calibration.json")
             fm.createFile(atPath: jsonDataPath!.relativePath, contents: nil)
+            
+            let deviceID = modelIdentifier()
+            let calibration = Calibration(deviceID: deviceID)
+            let jsonEncoderTmp = try JSONEncoder().encode(calibration)
+            fm.createFile(atPath: calibJsonDataPath!.relativePath, contents: jsonEncoderTmp, attributes: nil)
             
             jsonData = try FileHandle(forWritingTo: jsonDataPath!)
         } catch {
