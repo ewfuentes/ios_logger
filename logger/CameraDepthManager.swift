@@ -157,7 +157,7 @@ class CameraDepthManager: NSObject, AVCaptureDataOutputSynchronizerDelegate, Obs
         videoCaptureDevice.activeFormat = format
         videoCaptureDevice.activeDepthDataFormat = depthFormat
         // fix the focal length
-        videoCaptureDevice.setFocusModeLocked(lensPosition: 0.75, handler: nil) 
+        videoCaptureDevice.setFocusModeLocked(lensPosition: 0.75)
         
         
         // Finish the device configuration.
