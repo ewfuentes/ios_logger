@@ -13,7 +13,7 @@ import UIKit
 func saveDepth16PixelBufferAsTIFFWithoutNormalization(_ pixelBuffer: CVPixelBuffer, to url: URL) {
     // Ensure the pixel buffer has the expected format
     guard CVPixelBufferGetPixelFormatType(pixelBuffer) == kCVPixelFormatType_DepthFloat32 else {
-        print("Pixel buffer is not in Depth16 format.")
+        print("Pixel buffer is not in Depth32 format.")
         return
     }
     
@@ -36,8 +36,9 @@ func saveDepth16PixelBufferAsTIFFWithoutNormalization(_ pixelBuffer: CVPixelBuff
         return
     }
     
-    // Create a bitmap context with the 16-bit depth data
-    let bitsPerComponent = 32 // Depth16 uses 16 bits per component
+
+    // Create a bitmap context with the 32-bit depth data
+    let bitsPerComponent = 32 // Depth32 uses 32 bits per component
     let bytesPerRow = rowBytes
     let bitmapInfo = (CGImageAlphaInfo.none.rawValue |
                     CGBitmapInfo.byteOrder32Little.rawValue |
