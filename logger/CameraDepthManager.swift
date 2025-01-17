@@ -36,6 +36,7 @@ func saveDepth16PixelBufferAsTIFFWithoutNormalization(_ pixelBuffer: CVPixelBuff
         return
     }
     
+
     // Create a bitmap context with the 32-bit depth data
     let bitsPerComponent = 32 // Depth32 uses 32 bits per component
     let bytesPerRow = rowBytes
@@ -155,6 +156,8 @@ class CameraDepthManager: NSObject, AVCaptureDataOutputSynchronizerDelegate, Obs
         // Configure the device and depth formats.
         videoCaptureDevice.activeFormat = format
         videoCaptureDevice.activeDepthDataFormat = depthFormat
+        // fix the focal length
+        videoCaptureDevice.setFocusModeLocked(lensPosition: 0.75)
         
         
         // Finish the device configuration.
@@ -335,7 +338,7 @@ class VideoCapture: NSObject {
         self.outputURL = outputFileURL
 
         // Initialize the asset writer
-        assetWriter = try AVAssetWriter(outputURL: outputFileURL, fileType: .mov)
+        assetWriter = try AVAssetWriter(outputURL: outputFileURL, fileType: .mp4)
 
         // Configure video settings
         let videoSettings: [String: Any] = [

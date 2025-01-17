@@ -17,8 +17,8 @@ class IMULoggingManager: ObservableObject {
     init() {
         // Set up motion manager
         motionManager = CMMotionManager()
-        motionManager?.accelerometerUpdateInterval = 0.1
-        motionManager?.gyroUpdateInterval = 0.1
+        motionManager?.accelerometerUpdateInterval = 0.01
+        motionManager?.gyroUpdateInterval = 0.01
     }
     
     func startIMUUpdates() {

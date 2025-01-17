@@ -64,26 +64,36 @@ struct ContentView: View {
                 gpsLoggingManager.logManager = self.logManager
                 cameraDepthManager.logManager = self.logManager
             }
-            .onChange(of: logCameraDepth, initial: true) { _, newValue in
-                if newValue {
-                    cameraDepthManager.startSession()
-                } else {
-                    cameraDepthManager.stopSession()
-                }
+            .padding()
+        }
+        .navigationTitle("Logger App")
+        .onAppear {
+            // Start GPS updates and IMU updates when view appears
+            
+            imuLoggingManager.startIMUUpdates()
+            imuLoggingManager.logManager = self.logManager
+            gpsLoggingManager.logManager = self.logManager
+            cameraDepthManager.logManager = self.logManager
+        }
+        .onChange(of: logCameraDepth, initial: true) { _, newValue in
+            if newValue {
+                cameraDepthManager.startSession()
+            } else {
+                cameraDepthManager.stopSession()
             }
-            .onChange(of: logGPS, initial: true) { _, newValue in
-                if newValue {
-                    gpsLoggingManager.startUpdatingLocation()
-                } else {
-                    //                    gpsLoggingManager.locationManager.stopUpdatingLocation()
-                }
+        }
+        .onChange(of: logGPS, initial: true) { _, newValue in
+            if newValue {
+                gpsLoggingManager.startUpdatingLocation()
+            } else {
+//                    gpsLoggingManager.locationManager.stopUpdatingLocation()
             }
-            .onChange(of: logIMU) {_, newValue in
-                if newValue {
-                    imuLoggingManager.startIMUUpdates()
-                } else {
-                    imuLoggingManager.stopIMUUpdates()
-                }
+        }
+        .onChange(of: logIMU) {_, newValue in
+            if newValue {
+                imuLoggingManager.startIMUUpdates()
+            } else {
+                imuLoggingManager.stopIMUUpdates()
             }
         }
     }
